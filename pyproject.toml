@@ -1,0 +1,18 @@
+[project]
+name = "arena-rclpy-mixins-workspace"
+version = "0.0.0"
+requires-python = "==3.12.*"
+dependencies = [
+    "arena-rclpy-mixins",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+arena-rclpy-mixins = { workspace = true }
+
+[tool.uv.workspace]
+members = [
+    "arena_rclpy_mixins",
+]

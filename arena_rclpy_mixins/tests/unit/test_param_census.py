@@ -13,7 +13,7 @@ def _arena_root() -> pathlib.Path:
     for parent in pathlib.Path(__file__).resolve().parents:
         if (parent / "_meta").is_dir():
             return parent
-    raise RuntimeError("the Arena tree (a parent holding _meta/) was not found above this test")
+    pytest.skip("the Arena tree (a parent holding _meta/) is not above this checkout")
 
 
 def test_every_parameter_and_launch_argument_is_declared_and_described() -> None:
