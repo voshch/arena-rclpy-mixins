@@ -23,7 +23,7 @@ Sourced from `__init__.py` plus the submodules it re-exports.
 | `TimeNode` | mixin | `.sim_time`, `.wall_time`, `.time`, `.wall_clock`, `.wall_timer()`, `.sim_time_rate()` | Any node that needs clock utilities |
 | `Time` | class | Arithmetic, comparable, converts between `rclpy.time.Time`, `builtin_interfaces.msg.Time`, `rosgraph_msgs.msg.Clock`, and `float` | Time math without rclpy churn |
 | `AsyncNode` | class | `await_ros()`, `loop_future()`, `wait_for()`, `sync_wrap()`, `ros_callback()`, `create_client_wrapper()`, `create_action_client_wrapper()`, `do_launch()` | Nodes mixing async and sync code |
-| `ClientWrapper` | class | Async `call_timeout()` / sync `call_timeout_sync()` around a service client | Service calls with timeout logging |
+| `ClientWrapper` | class | Async `call_timeout()` / sync `call_timeout_sync()` around a service client, bounded `call_forever()`, `prime()` answering a caller's harmless probe before the first call | Service calls with timeout logging |
 | `ActionClientWrapper` | class | `send_goal()`, `send_goal_timeout()`, `await_result()`, `send_and_await()`, `cancel()`, `ensure()` | Action client with timeout wrappers |
 | `AsyncUtil` | class | `AsyncUtil.timeout(coro, sec)`: `asyncio.wait_for` that returns `None` on timeout | One-off timeout wrapper |
 | `AsyncLaunchManager` / `LaunchHandle` | class | `launch_description()` returns a `LaunchHandle` (awaitable to completion; `shutdown()` gracefully terminates child processes); `kill_all()` shuts down all. Environment actions act on a per-launch copy of `os.environ` (`IsolatedEnvironmentContext`), never on the process environment | Nodes that programmatically launch sub-processes |

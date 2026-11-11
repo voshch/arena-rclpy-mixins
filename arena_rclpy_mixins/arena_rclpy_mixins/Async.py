@@ -282,11 +282,21 @@ class AsyncNode(TimeNode, rclpy.node.Node):
         wrapped = self.ros_callback(callback)
         return super().create_service(srv_type, srv_name, wrapped, qos_profile=qos_profile, callback_group=callback_group)
 
-    def create_client_wrapper(self, srv_type: type, srv_name: str, timeout: float = 60.0, *, qos_profile: rclpy.client.QoSProfile = rclpy.qos.qos_profile_services_default, callback_group: rclpy.client.CallbackGroup | None = None) -> ClientWrapper:
+    def create_client_wrapper(
+        self,
+        srv_type: type,
+        srv_name: str,
+        timeout: float = 60.0,
+        *,
+        qos_profile: rclpy.client.QoSProfile = rclpy.qos.qos_profile_services_default,
+        callback_group: rclpy.client.CallbackGroup | None = None,
+        probe: object | None = None,
+    ) -> ClientWrapper:
         return ClientWrapper(
             self,
             self.create_client(srv_type, srv_name, qos_profile=qos_profile, callback_group=callback_group),
             timeout=timeout,
+            probe=probe,
         )
 
     def create_action_client_wrapper(self, action_type: type, action_name: str, timeout: float = 60.0, *, callback_group: rclpy.client.CallbackGroup | None = None) -> ActionClientWrapper:
@@ -312,14 +322,36 @@ ServiceT = typing.TypeVar('ServiceT')
 class ClientWrapper(typing.Generic[ServiceT]):
     """Async wrapper around rclpy.client.Client."""
 
-    def __init__(self, node: AsyncNode, client: rclpy.client.Client, timeout: float = 60.0):
+    def __init__(self, node: AsyncNode, client: rclpy.client.Client, timeout: float = 60.0, probe: object | None = None):
         self._node: AsyncNode = node
         self._client: rclpy.client.Client = client
         self._timeout: float = timeout
+        self._probe: object | None = probe
+        self._primed: bool = probe is None
 
     @property
     def client(self) -> rclpy.client.Client:
         return self._client
+
+    async def prime(self) -> None:
+        """Answer the caller's harmless probe, the one request the wrapper may repeat, so the first real call does not meet a dropped reply."""
+        if self._primed:
+            return
+        probe = self._probe
+        if probe is None:
+            return
+        for _ in range(3):
+            if await self._send(probe, timeout_sec=min(2.0, self._timeout)) is not None:
+                self._primed = True
+                return
+        self._node.get_logger().warning(f"no answer to the warm-up of {self._client.srv_name}, the first call may meet a dropped reply")
+
+    async def _send(self, request: object, timeout_sec: float) -> typing.Any | None:  # noqa: ANN401
+        ros_future = self._client.call_async(request)
+        res = await AsyncUtil.timeout(self._node.await_ros(ros_future), timeout_sec=timeout_sec)
+        if res is None:
+            self._client.remove_pending_request(ros_future)
+        return res
 
     async def call_timeout(
         self,
@@ -328,6 +360,7 @@ class ClientWrapper(typing.Generic[ServiceT]):
     ) -> typing.Any | None:  # noqa: ANN401
         if timeout_sec is None:
             timeout_sec = self._timeout
+        await self.prime()
         ros_future = self._client.call_async(request)
         res = await AsyncUtil.timeout(self._node.await_ros(ros_future), timeout_sec=timeout_sec)
         if res is None:
@@ -354,14 +387,17 @@ class ClientWrapper(typing.Generic[ServiceT]):
         self,
         request: object,
         what: str | None = None,
+        timeout_sec: float | None = None,
     ) -> typing.Any:  # noqa: ANN401
-        """Ensure + await the response with no timeout, narrating the wait.
-        The caller owns cancellation (e.g. via shutdown)."""
+        """Ensure + await the response, bounded by `timeout_sec` (default the wrapper's) so a dropped reply cannot hang the caller forever."""
         await self.ensure()
-        return await self._node.await_forever(
-            self._node.await_ros(self._client.call_async(request)),
-            what if what is not None else f"response from {self._client.srv_name}",
-        )
+        await self.prime()
+        if timeout_sec is None:
+            timeout_sec = self._timeout
+        res = await self._send(request, timeout_sec)
+        if res is None:
+            raise TimeoutError(f"no {what if what is not None else 'response'} from {self._client.srv_name} within {timeout_sec}s")
+        return res
 
     async def ensure(self, timeout_sec: float | None = None) -> bool:
         if timeout_sec is None:
